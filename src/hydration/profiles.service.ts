@@ -1,7 +1,7 @@
 import { AtpAgent } from "@atproto/api";
 import { Database } from "duckdb";
 import { ProfilesRepository } from "../database/profiles.repository.js";
-import { RateLimiter } from "../utils/rate-limit.js";
+import { pRateLimit } from "p-ratelimit";
 import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
 import { logger } from "../logger/index.js";
 import { config } from "../config/index.js";
@@ -9,15 +9,16 @@ import { config } from "../config/index.js";
 export class ProfileHydrationService {
   private agent: AtpAgent;
   private profilesRepo: ProfilesRepository;
-  private rateLimiter: RateLimiter;
+  private limit: ReturnType<typeof pRateLimit>;
 
   constructor(db: Database) {
     this.agent = new AtpAgent({ service: `https://${config.bsky.pds}` });
     this.profilesRepo = new ProfilesRepository(db);
-    this.rateLimiter = new RateLimiter({
-      maxTokens: 3000,
-      refillRate: 10,
-      refillInterval: 100,
+    this.limit = pRateLimit({
+      interval: 300000,
+      rate: 3000,
+      concurrency: 48,
+      maxDelay: 60000,
     });
   }
 
@@ -42,27 +43,27 @@ export class ProfileHydrationService {
         return;
       }
 
-      await this.rateLimiter.acquire(1);
-
-      const profileResponse = await withRetry(
-        async () => {
-          return await this.agent.com.atproto.repo.getRecord({
-            repo: did,
-            collection: "app.bsky.actor.profile",
-            rkey: "self",
-          });
-        },
-        {
-          maxAttempts: 3,
-          initialDelay: 1000,
-          maxDelay: 10000,
-          backoffMultiplier: 2,
-          retryableErrors: [
-            isRateLimitError,
-            isNetworkError,
-            isServerError,
-          ],
-        }
+      const profileResponse = await this.limit(() =>
+        withRetry(
+          async () => {
+            return await this.agent.com.atproto.repo.getRecord({
+              repo: did,
+              collection: "app.bsky.actor.profile",
+              rkey: "self",
+            });
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            maxDelay: 10000,
+            backoffMultiplier: 2,
+            retryableErrors: [
+              isRateLimitError,
+              isNetworkError,
+              isServerError,
+            ],
+          }
+        )
       );
 
       let displayName: string | undefined;
@@ -74,23 +75,23 @@ export class ProfileHydrationService {
         description = record.description;
       }
 
-      await this.rateLimiter.acquire(1);
-
-      const profileLookup = await withRetry(
-        async () => {
-          return await this.agent.getProfile({ actor: did });
-        },
-        {
-          maxAttempts: 3,
-          initialDelay: 1000,
-          maxDelay: 10000,
-          backoffMultiplier: 2,
-          retryableErrors: [
-            isRateLimitError,
-            isNetworkError,
-            isServerError,
-          ],
-        }
+      const profileLookup = await this.limit(() =>
+        withRetry(
+          async () => {
+            return await this.agent.getProfile({ actor: did });
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            maxDelay: 10000,
+            backoffMultiplier: 2,
+            retryableErrors: [
+              isRateLimitError,
+              isNetworkError,
+              isServerError,
+            ],
+          }
+        )
       );
 
       let handle: string | undefined;

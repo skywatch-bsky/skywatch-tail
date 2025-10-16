@@ -2,7 +2,7 @@ import { AtpAgent } from "@atproto/api";
 import { Database } from "duckdb";
 import { PostsRepository } from "../database/posts.repository.js";
 import { BlobProcessor } from "../blobs/processor.js";
-import { RateLimiter } from "../utils/rate-limit.js";
+import { pRateLimit } from "p-ratelimit";
 import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
 import { logger } from "../logger/index.js";
 import { config } from "../config/index.js";
@@ -11,16 +11,17 @@ export class PostHydrationService {
   private agent: AtpAgent;
   private postsRepo: PostsRepository;
   private blobProcessor: BlobProcessor;
-  private rateLimiter: RateLimiter;
+  private limit: ReturnType<typeof pRateLimit>;
 
   constructor(db: Database) {
     this.agent = new AtpAgent({ service: `https://${config.bsky.pds}` });
     this.postsRepo = new PostsRepository(db);
     this.blobProcessor = new BlobProcessor(db, this.agent);
-    this.rateLimiter = new RateLimiter({
-      maxTokens: 3000,
-      refillRate: 10,
-      refillInterval: 100,
+    this.limit = pRateLimit({
+      interval: 300000,
+      rate: 3000,
+      concurrency: 48,
+      maxDelay: 60000,
     });
   }
 
@@ -53,27 +54,27 @@ export class PostHydrationService {
 
       const [did, collection, rkey] = uriParts;
 
-      await this.rateLimiter.acquire(1);
-
-      const response = await withRetry(
-        async () => {
-          return await this.agent.com.atproto.repo.getRecord({
-            repo: did,
-            collection,
-            rkey,
-          });
-        },
-        {
-          maxAttempts: 3,
-          initialDelay: 1000,
-          maxDelay: 10000,
-          backoffMultiplier: 2,
-          retryableErrors: [
-            isRateLimitError,
-            isNetworkError,
-            isServerError,
-          ],
-        }
+      const response = await this.limit(() =>
+        withRetry(
+          async () => {
+            return await this.agent.com.atproto.repo.getRecord({
+              repo: did,
+              collection,
+              rkey,
+            });
+          },
+          {
+            maxAttempts: 3,
+            initialDelay: 1000,
+            maxDelay: 10000,
+            backoffMultiplier: 2,
+            retryableErrors: [
+              isRateLimitError,
+              isNetworkError,
+              isServerError,
+            ],
+          }
+        )
       );
 
       if (!response.success || !response.data.value) {
