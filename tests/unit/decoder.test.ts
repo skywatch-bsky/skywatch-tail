@@ -1,13 +1,13 @@
 import { describe, test, expect } from "bun:test";
 import {
-  extractLabelFromMessage,
+  extractLabelsFromMessage,
   validateLabel,
   LabelEvent,
 } from "../../src/firehose/decoder.js";
 
 describe("Firehose Decoder", () => {
-  describe("extractLabelFromMessage", () => {
-    test("should extract label from valid message", () => {
+  describe("extractLabelsFromMessage", () => {
+    test("should extract labels from valid message", () => {
       const message = {
         op: 1,
         t: "#labels",
@@ -21,27 +21,27 @@ describe("Firehose Decoder", () => {
         ],
       };
 
-      const label = extractLabelFromMessage(message);
+      const labels = extractLabelsFromMessage(message);
 
-      expect(label).not.toBeNull();
-      expect(label?.val).toBe("spam");
-      expect(label?.src).toBe("did:plc:labeler");
+      expect(labels).toHaveLength(1);
+      expect(labels[0].val).toBe("spam");
+      expect(labels[0].src).toBe("did:plc:labeler");
     });
 
-    test("should return null for non-label messages", () => {
+    test("should return empty array for non-label messages", () => {
       const message = {
         op: 1,
         t: "#info",
       };
 
-      const label = extractLabelFromMessage(message);
+      const labels = extractLabelsFromMessage(message);
 
-      expect(label).toBeNull();
+      expect(labels).toHaveLength(0);
     });
 
-    test("should return null for messages with wrong op", () => {
+    test("should extract all labels from message with multiple labels", () => {
       const message = {
-        op: 0,
+        op: 1,
         t: "#labels",
         labels: [
           {
@@ -50,24 +50,32 @@ describe("Firehose Decoder", () => {
             val: "spam",
             cts: "2025-01-15T12:00:00Z",
           },
+          {
+            src: "did:plc:labeler",
+            uri: "at://did:plc:user/app.bsky.feed.post/456",
+            val: "csam",
+            cts: "2025-01-15T12:01:00Z",
+          },
         ],
       };
 
-      const label = extractLabelFromMessage(message);
+      const labels = extractLabelsFromMessage(message);
 
-      expect(label).toBeNull();
+      expect(labels).toHaveLength(2);
+      expect(labels[0].val).toBe("spam");
+      expect(labels[1].val).toBe("csam");
     });
 
-    test("should return null for messages with empty labels array", () => {
+    test("should return empty array for messages with empty labels array", () => {
       const message = {
         op: 1,
         t: "#labels",
         labels: [],
       };
 
-      const label = extractLabelFromMessage(message);
+      const labels = extractLabelsFromMessage(message);
 
-      expect(label).toBeNull();
+      expect(labels).toHaveLength(0);
     });
   });
 

@@ -1,16 +1,19 @@
 import { AtpAgent } from "@atproto/api";
 import { Database } from "duckdb";
 import { PostsRepository } from "../database/posts.repository.js";
+import { BlobProcessor } from "../blobs/processor.js";
 import { logger } from "../logger/index.js";
 import { config } from "../config/index.js";
 
 export class PostHydrationService {
   private agent: AtpAgent;
   private postsRepo: PostsRepository;
+  private blobProcessor: BlobProcessor;
 
   constructor(db: Database) {
     this.agent = new AtpAgent({ service: `https://${config.bsky.pds}` });
     this.postsRepo = new PostsRepository(db);
+    this.blobProcessor = new BlobProcessor(db, this.agent);
   }
 
   async initialize(): Promise<void> {
@@ -57,12 +60,14 @@ export class PostHydrationService {
 
       const isReply = !!record.reply;
 
+      const embeds = record.embed ? [record.embed] : null;
+
       await this.postsRepo.insert({
         uri,
         did,
         text: record.text || "",
         facets: record.facets || null,
-        embeds: record.embed || null,
+        embeds,
         langs: record.langs || null,
         tags: record.tags || null,
         created_at: record.createdAt,
@@ -70,6 +75,14 @@ export class PostHydrationService {
       });
 
       logger.info({ uri }, "Post hydrated successfully");
+
+      if (embeds) {
+        try {
+          await this.blobProcessor.processBlobs(uri, embeds);
+        } catch (error) {
+          logger.warn({ error, uri }, "Failed to process blobs for post");
+        }
+      }
     } catch (error) {
       logger.error({ error, uri }, "Failed to hydrate post");
       throw error;

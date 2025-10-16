@@ -13,18 +13,14 @@ const configSchema = z.object({
     wssUrl: z.string().url("WSS_URL must be a valid URL"),
   }),
   blobs: z.object({
-    hydrate: z.boolean().default(false),
-    storageType: z.enum(["local", "s3"]).default("local"),
-    storagePath: z.string().default("./data/blobs"),
+    hydrateBlobs: z.boolean().default(false),
+    storage: z.object({
+      type: z.enum(["local", "s3"]).default("local"),
+      localPath: z.string().default("./data/blobs"),
+      s3Bucket: z.string().optional(),
+      s3Region: z.string().optional(),
+    }),
   }),
-  s3: z
-    .object({
-      bucket: z.string().optional(),
-      region: z.string().optional(),
-      accessKeyId: z.string().optional(),
-      secretAccessKey: z.string().optional(),
-    })
-    .optional(),
   database: z.object({
     path: z.string().default("./data/skywatch.duckdb"),
   }),
@@ -51,19 +47,14 @@ function loadConfig(): Config {
       wssUrl: process.env.WSS_URL,
     },
     blobs: {
-      hydrate: process.env.HYDRATE_BLOBS === "true",
-      storageType: process.env.BLOB_STORAGE_TYPE,
-      storagePath: process.env.BLOB_STORAGE_PATH,
+      hydrateBlobs: process.env.HYDRATE_BLOBS === "true",
+      storage: {
+        type: process.env.BLOB_STORAGE_TYPE,
+        localPath: process.env.BLOB_STORAGE_PATH,
+        s3Bucket: process.env.S3_BUCKET,
+        s3Region: process.env.S3_REGION,
+      },
     },
-    s3:
-      process.env.BLOB_STORAGE_TYPE === "s3"
-        ? {
-            bucket: process.env.S3_BUCKET,
-            region: process.env.S3_REGION,
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-          }
-        : undefined,
     database: {
       path: process.env.DB_PATH,
     },
@@ -85,15 +76,13 @@ function loadConfig(): Config {
     process.exit(1);
   }
 
-  if (result.data.blobs.storageType === "s3") {
+  if (result.data.blobs.storage.type === "s3") {
     if (
-      !result.data.s3?.bucket ||
-      !result.data.s3?.region ||
-      !result.data.s3?.accessKeyId ||
-      !result.data.s3?.secretAccessKey
+      !result.data.blobs.storage.s3Bucket ||
+      !result.data.blobs.storage.s3Region
     ) {
       console.error(
-        "S3 configuration is incomplete. Required: S3_BUCKET, S3_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY"
+        "S3 configuration is incomplete. Required: S3_BUCKET, S3_REGION"
       );
       process.exit(1);
     }
