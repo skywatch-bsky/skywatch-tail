@@ -175,5 +175,11 @@ describe("Database Integration Tests", () => {
       const found = await blobsRepo.findByPhash("deadbeef");
       expect(found.length).toBeGreaterThan(0);
     });
+
+    test("should find blob by CID", async () => {
+      const found = await blobsRepo.findByCid("bafytest123");
+      expect(found).not.toBeNull();
+      expect(found?.sha256).toBe("abc123def456");
+    });
   });
 });

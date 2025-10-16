@@ -54,6 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_labels_uri ON labels(uri);
 CREATE INDEX IF NOT EXISTS idx_labels_val ON labels(val);
 CREATE INDEX IF NOT EXISTS idx_labels_cts ON labels(cts);
 CREATE INDEX IF NOT EXISTS idx_posts_did ON posts(did);
+CREATE INDEX IF NOT EXISTS idx_blobs_cid ON blobs(blob_cid);
 CREATE INDEX IF NOT EXISTS idx_blobs_sha256 ON blobs(sha256);
 CREATE INDEX IF NOT EXISTS idx_blobs_phash ON blobs(phash);
 `;

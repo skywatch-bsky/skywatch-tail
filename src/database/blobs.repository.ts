@@ -103,4 +103,21 @@ export class BlobsRepository {
       );
     });
   }
+
+  async findByCid(cid: string): Promise<Blob | null> {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        `SELECT * FROM blobs WHERE blob_cid = $1 LIMIT 1`,
+        cid,
+        (err, rows: Blob[]) => {
+          if (err) {
+            logger.error({ err, cid }, "Failed to find blob by CID");
+            reject(err);
+            return;
+          }
+          resolve(rows?.[0] || null);
+        }
+      );
+    });
+  }
 }
