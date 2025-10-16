@@ -1,0 +1,11 @@
+services:
+  skywatch-tail:
+    build: .
+    container_name: skywatch-tail
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
