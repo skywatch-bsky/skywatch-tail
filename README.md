@@ -6,9 +6,12 @@ A high-performance label capture and content hydration service for Bluesky moder
 
 - **Real-time Label Capture**: Subscribe to any Bluesky labeler's firehose via WebSocket
 - **Automatic Content Hydration**: Fetch full post records and user profiles for labeled content
+- **Blob Processing**: SHA-256 and perceptual hashing for images/videos with optional download
 - **Intelligent Filtering**: Optionally filter labels by type to capture only what you need
+- **Rate Limiting**: Respects Bluesky API limits (3000 req/5min) with p-ratelimit
+- **Retry Logic**: Automatic retry with exponential backoff for transient failures
 - **Cursor Persistence**: Resume from where you left off after restarts
-- **Automatic Reconnection**: Exponential backoff reconnection (1s-30s) for stability
+- **Automatic Reconnection**: Exponential backoff reconnection (1s-60s) for stability
 - **DuckDB Storage**: Embedded analytics database optimized for ML pipelines
 - **Docker Ready**: Containerized deployment with volume persistence
 - **Type-Safe**: Full TypeScript implementation with Zod validation
@@ -18,15 +21,20 @@ A high-performance label capture and content hydration service for Bluesky moder
 ```
 Firehose → Label Event → Filter → Store Label → Hydration Queue
                                         ↓              ↓
-                                   DuckDB ← [Post/Profile Fetch]
+                                   DuckDB ← [Post/Profile Fetch] → Blob Processing
+                                                                         ↓
+                                                                    Hash + Store
 ```
 
 ### Components
 
 - **Firehose Subscriber**: WebSocket client with DAG-CBOR decoding
 - **Label Filter**: Configurable allow-list for label types
-- **Hydration Services**: Automatic post and profile data fetching
+- **Hydration Services**: Automatic post and profile data fetching with rate limiting
+- **Blob Processor**: SHA-256 and perceptual hash computation with optional download
 - **Hydration Queue**: Async queue with deduplication
+- **Rate Limiter**: p-ratelimit enforcing 3000 requests per 5 minutes
+- **Retry Logic**: Exponential backoff for transient failures
 - **Repository Layer**: Clean database abstraction for all entities
 
 ## Quick Start
@@ -104,11 +112,11 @@ All configuration is managed via environment variables:
 - `CAPTURE_LABELS`: Comma-separated list of label values to capture
 - `DB_PATH`: Path to DuckDB database file (default: `./data/skywatch.duckdb`)
 - `LOG_LEVEL`: Logging level (default: `info`)
-- `HYDRATE_BLOBS`: Enable blob download (default: `false`) - Phase 4
-- `BLOB_STORAGE_TYPE`: Storage backend for blobs (`local` or `s3`) - Phase 4
-- `BLOB_STORAGE_PATH`: Local path for blob storage - Phase 4
+- `HYDRATE_BLOBS`: Enable blob download (default: `false`)
+- `BLOB_STORAGE_TYPE`: Storage backend for blobs (`local` or `s3`)
+- `BLOB_STORAGE_PATH`: Local path for blob storage (default: `./data/blobs`)
 
-### S3 Configuration (Phase 4, Optional)
+### S3 Configuration (Optional)
 
 - `S3_BUCKET`: S3 bucket name
 - `S3_REGION`: AWS region
@@ -150,7 +158,7 @@ Hydrated user profile data.
 - `display_name`: Display name
 - `description`: Bio/description
 
-### Blobs Table (Phase 4)
+### Blobs Table
 Image and video blob metadata.
 
 - `post_uri`: Associated post URI
@@ -188,6 +196,15 @@ Key log events:
 - `Received label`: Label captured and stored
 - `Post hydrated successfully`: Post data fetched
 - `Profile hydrated successfully`: Profile data fetched
+- `Blob processed`: Blob hashed and optionally stored
+
+## Rate Limiting
+
+The service implements p-ratelimit to respect Bluesky's API limits:
+- **Limit**: 3000 requests per 5 minutes per IP address
+- **Concurrency**: Up to 48 concurrent requests
+- **Backoff**: Automatic delays when approaching limits
+- **Retry Logic**: Exponential backoff for rate limit errors (1s-10s)
 
 ## Development
 
@@ -196,11 +213,13 @@ Key log events:
 ```
 skywatch-tail/
 ├── src/
+│   ├── blobs/            # Blob processing and storage
 │   ├── config/           # Environment validation
 │   ├── database/         # Schema and repositories
 │   ├── firehose/         # WebSocket subscriber
 │   ├── hydration/        # Content hydration services
 │   ├── logger/           # Pino logger setup
+│   ├── utils/            # Retry logic and helpers
 │   └── index.ts          # Main entry point
 ├── tests/
 │   ├── integration/      # Database integration tests
@@ -244,8 +263,8 @@ SELECT uri, text FROM posts ORDER BY created_at DESC LIMIT 10;
 - [x] Phase 1: Core infrastructure (Docker, config, database, logging)
 - [x] Phase 2: Firehose connection and label capture
 - [x] Phase 3: Content hydration (posts and profiles)
-- [ ] Phase 4: Blob processing (image/video hashing and storage)
-- [ ] Phase 5: Rate limiting and optimization
+- [x] Phase 4: Blob processing (image/video hashing and storage)
+- [x] Phase 5: Rate limiting and optimization
 - [ ] Phase 6: Comprehensive testing
 - [ ] Phase 7: Documentation
 
