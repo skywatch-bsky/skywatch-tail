@@ -1,4 +1,4 @@
-import { decode as decodeCBOR } from "@atcute/cbor";
+import { decodeFirst } from "@atcute/cbor";
 import { logger } from "../logger/index.js";
 
 export interface LabelEvent {
@@ -14,36 +14,44 @@ export interface LabelEvent {
 }
 
 export interface FirehoseMessage {
-  op: number;
+  op?: number;
   t?: string;
+  seq?: number;
+  labels?: LabelEvent[];
   [key: string]: any;
 }
 
 export function decodeFirehoseMessage(data: Buffer): FirehoseMessage | null {
   try {
-    const decoded = decodeCBOR(data);
-    return decoded as FirehoseMessage;
-  } catch (error) {
-    logger.error({ error }, "Failed to decode CBOR message");
+    const buffer = new Uint8Array(data);
+    const [header, remainder] = decodeFirst(buffer);
+    const [body] = decodeFirst(remainder);
+
+    return body as FirehoseMessage;
+  } catch (err) {
+    logger.error(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        errorStack: err instanceof Error ? err.stack : undefined,
+        dataLength: data.length,
+        dataPreview: data.slice(0, 50).toString("hex")
+      },
+      "Failed to decode CBOR message"
+    );
     return null;
   }
 }
 
-export function extractLabelFromMessage(message: FirehoseMessage): LabelEvent | null {
-  if (!message || message.op !== 1) {
-    return null;
+export function extractLabelsFromMessage(message: FirehoseMessage): LabelEvent[] {
+  if (!message) {
+    return [];
   }
 
-  if (message.t !== "#labels") {
-    return null;
+  if (message.labels && Array.isArray(message.labels)) {
+    return message.labels;
   }
 
-  const labels = message.labels;
-  if (!Array.isArray(labels) || labels.length === 0) {
-    return null;
-  }
-
-  return labels[0] as LabelEvent;
+  return [];
 }
 
 export function validateLabel(label: LabelEvent): boolean {

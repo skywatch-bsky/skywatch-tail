@@ -4,7 +4,7 @@ import { config } from "../config/index.js";
 import { logger } from "../logger/index.js";
 import {
   decodeFirehoseMessage,
-  extractLabelFromMessage,
+  extractLabelsFromMessage,
   validateLabel,
   LabelEvent,
 } from "./decoder.js";
@@ -86,17 +86,15 @@ export class FirehoseSubscriber extends EventEmitter {
           return;
         }
 
-        const label = extractLabelFromMessage(message);
-        if (!label) return;
-
-        if (!validateLabel(label)) return;
-
-        if (!this.filter.shouldCapture(label)) return;
-
-        this.emit("label", label);
-
         if (message.seq) {
           await this.saveCursor(message.seq);
+        }
+
+        const labels = extractLabelsFromMessage(message);
+        for (const label of labels) {
+          if (!validateLabel(label)) continue;
+          if (!this.filter.shouldCapture(label)) continue;
+          this.emit("label", label);
         }
       } catch (error) {
         logger.error({ error }, "Error processing message");
