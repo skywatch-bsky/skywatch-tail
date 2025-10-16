@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "mcp__git-mcp-server__git_push",
+      "mcp__git-mcp-server__git_log"
     ],
     "deny": [],
     "ask": []

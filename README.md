@@ -68,7 +68,7 @@ BSKY_PASSWORD=your-app-password
 WSS_URL=wss://your-labeler.com/xrpc/com.atproto.label.subscribeLabels
 
 # Optional: Filter specific labels
-CAPTURE_LABELS=spam,hate-speech,csam
+CAPTURE_LABELS=spam,hate-speech
 
 # Logging
 LOG_LEVEL=info
@@ -173,7 +173,7 @@ Image and video blob metadata.
 Filter labels by providing a comma-separated list in `CAPTURE_LABELS`:
 
 ```env
-CAPTURE_LABELS=spam,hate-speech,csam,scam
+CAPTURE_LABELS=spam,hate-speech,scam
 ```
 
 If not set, all labels are captured.
@@ -271,7 +271,7 @@ SELECT uri, text FROM posts ORDER BY created_at DESC LIMIT 10;
 ## Safety Features
 
 ### Blob Hydration
-By default, `HYDRATE_BLOBS` is `false`. This prevents accidental download of potentially harmful content (CSAM, graphic violence, etc.) while still capturing cryptographic and perceptual hashes for ML training.
+By default, `HYDRATE_BLOBS` is `false`. This prevents accidental download of potentially harmful / and or unlawful content (CSAM, graphic violence, etc.) while still capturing cryptographic and perceptual hashes.
 
 Only enable blob download if:
 1. You understand the legal and safety implications
