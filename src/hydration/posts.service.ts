@@ -3,7 +3,7 @@ import { Database } from "duckdb";
 import { PostsRepository } from "../database/posts.repository.js";
 import { BlobProcessor } from "../blobs/processor.js";
 import { pRateLimit } from "p-ratelimit";
-import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
+import { withRetry, isRateLimitError, isNetworkError, isServerError, isRecordNotFoundError } from "../utils/retry.js";
 import { logger } from "../logger/index.js";
 import { config } from "../config/index.js";
 
@@ -110,6 +110,10 @@ export class PostHydrationService {
         }
       }
     } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        logger.warn({ uri }, "Post record not found, skipping");
+        return;
+      }
       logger.error({ error, uri }, "Failed to hydrate post");
       throw error;
     }

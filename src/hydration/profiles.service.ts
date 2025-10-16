@@ -2,7 +2,7 @@ import { AtpAgent } from "@atproto/api";
 import { Database } from "duckdb";
 import { ProfilesRepository } from "../database/profiles.repository.js";
 import { pRateLimit } from "p-ratelimit";
-import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
+import { withRetry, isRateLimitError, isNetworkError, isServerError, isRecordNotFoundError } from "../utils/retry.js";
 import { logger } from "../logger/index.js";
 import { config } from "../config/index.js";
 
@@ -108,6 +108,10 @@ export class ProfileHydrationService {
 
       logger.info({ did, handle }, "Profile hydrated successfully");
     } catch (error) {
+      if (isRecordNotFoundError(error)) {
+        logger.warn({ did }, "Profile record not found, skipping");
+        return;
+      }
       logger.error({ error, did }, "Failed to hydrate profile");
       throw error;
     }

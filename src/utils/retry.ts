@@ -93,3 +93,10 @@ export function isNetworkError(error: any): boolean {
 export function isServerError(error: any): boolean {
   return error?.status >= 500 && error?.status < 600;
 }
+
+export function isRecordNotFoundError(error: any): boolean {
+  return (
+    error?.error === "RecordNotFound" ||
+    error?.message?.includes("RecordNotFound")
+  );
+}
