@@ -100,6 +100,37 @@ export class BlobProcessor {
     }
   }
 
+  private parseBlobUri(uri: string): { did: string; type: 'post' | 'avatar' | 'banner' } {
+    if (uri.startsWith("profile://")) {
+      const match = uri.match(/^profile:\/\/([^/]+)\/(avatar|banner)$/);
+      if (match) {
+        return { did: match[1], type: match[2] as 'avatar' | 'banner' };
+      }
+    }
+
+    const [, did] = uri.replace("at://", "").split("/");
+    return { did, type: 'post' };
+  }
+
+  private getBlobUrls(did: string, cid: string, type: 'post' | 'avatar' | 'banner'): { thumbnail: string; fullsize: string } {
+    if (type === 'avatar') {
+      return {
+        thumbnail: `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@jpeg`,
+        fullsize: `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@jpeg`,
+      };
+    } else if (type === 'banner') {
+      return {
+        thumbnail: `https://cdn.bsky.app/img/banner/plain/${did}/${cid}@jpeg`,
+        fullsize: `https://cdn.bsky.app/img/banner/plain/${did}/${cid}@jpeg`,
+      };
+    } else {
+      return {
+        thumbnail: `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${cid}@jpeg`,
+        fullsize: `https://cdn.bsky.app/img/feed_fullsize/plain/${did}/${cid}@jpeg`,
+      };
+    }
+  }
+
   private async processBlob(
     postUri: string,
     ref: BlobReference
@@ -113,13 +144,11 @@ export class BlobProcessor {
       return;
     }
 
-    const [, did] = postUri.replace("at://", "").split("/");
+    const { did, type } = this.parseBlobUri(postUri);
+    const urls = this.getBlobUrls(did, ref.cid, type);
 
     try {
-      const response = await fetch(
-        `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${ref.cid}@jpeg`,
-        { method: "HEAD" }
-      );
+      const response = await fetch(urls.thumbnail, { method: "HEAD" });
 
       if (!response.ok) {
         logger.warn(
@@ -133,9 +162,7 @@ export class BlobProcessor {
       let storagePath: string | undefined;
 
       if (this.storage && config.blobs.hydrateBlobs) {
-        const fullResponse = await fetch(
-          `https://cdn.bsky.app/img/feed_fullsize/plain/${did}/${ref.cid}@jpeg`
-        );
+        const fullResponse = await fetch(urls.fullsize);
 
         if (fullResponse.ok) {
           blobData = Buffer.from(
@@ -148,9 +175,7 @@ export class BlobProcessor {
           );
         }
       } else {
-        const thumbResponse = await fetch(
-          `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${ref.cid}@jpeg`
-        );
+        const thumbResponse = await fetch(urls.thumbnail);
 
         if (thumbResponse.ok) {
           blobData = Buffer.from(
@@ -182,7 +207,7 @@ export class BlobProcessor {
       });
 
       logger.info(
-        { postUri, cid: ref.cid, sha256: hashes.sha256 },
+        { postUri, cid: ref.cid, sha256: hashes.sha256, type },
         "Blob processed successfully"
       );
     } catch (error) {
