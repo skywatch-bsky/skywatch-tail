@@ -41,9 +41,15 @@ export class ProfileHydrationService {
   async hydrateProfile(did: string): Promise<void> {
     try {
       const existingProfile = await this.profilesRepo.findByDid(did);
-      if (existingProfile) {
-        logger.debug({ did }, "Profile already hydrated, skipping");
+      const needsRehydration = existingProfile && (existingProfile.avatar_cid === null || existingProfile.banner_cid === null);
+
+      if (existingProfile && !needsRehydration) {
+        logger.debug({ did }, "Profile already fully hydrated, skipping");
         return;
+      }
+
+      if (needsRehydration) {
+        logger.debug({ did }, "Re-hydrating profile to fetch avatar/banner CIDs");
       }
 
       const profileResponse = await this.limit(() =>
@@ -76,15 +82,23 @@ export class ProfileHydrationService {
 
       if (profileResponse.success && profileResponse.data.value) {
         const record = profileResponse.data.value as any;
+        logger.debug({ did, record }, "Profile record structure");
         displayName = record.displayName;
         description = record.description;
 
         if (record.avatar?.ref?.$link) {
           avatarCid = record.avatar.ref.$link;
+        } else {
+          avatarCid = "";
         }
+
         if (record.banner?.ref?.$link) {
           bannerCid = record.banner.ref.$link;
+        } else {
+          bannerCid = "";
         }
+
+        logger.debug({ did, avatarCid, bannerCid, hasAvatar: !!record.avatar, hasBanner: !!record.banner }, "Extracted CIDs from profile record");
       }
 
       const profileLookup = await this.limit(() =>
@@ -120,7 +134,7 @@ export class ProfileHydrationService {
         banner_cid: bannerCid,
       });
 
-      if (avatarCid) {
+      if (avatarCid && avatarCid !== "") {
         try {
           await this.blobProcessor.processBlobs(`profile://${did}/avatar`, [
             {
@@ -139,7 +153,7 @@ export class ProfileHydrationService {
         }
       }
 
-      if (bannerCid) {
+      if (bannerCid && bannerCid !== "") {
         try {
           await this.blobProcessor.processBlobs(`profile://${did}/banner`, [
             {
