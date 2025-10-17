@@ -187,11 +187,10 @@ export class ProfileHydrationService {
     cid: string,
     type: "avatar" | "banner"
   ): Promise<void> {
-    const existing = await this.profileBlobsRepo.findByDid(did);
-    const existingBlob = existing.find(b => b.blob_type === type && b.blob_cid === cid);
+    const latestBlob = await this.profileBlobsRepo.findLatestByDidAndType(did, type);
 
-    if (existingBlob) {
-      logger.debug({ did, cid, type }, "Blob already processed, skipping");
+    if (latestBlob && latestBlob.blob_cid === cid) {
+      logger.debug({ did, cid, type }, "Latest blob already has same CID, skipping");
       return;
     }
 

@@ -9,6 +9,7 @@ export interface ProfileBlob {
   phash?: string;
   storage_path?: string;
   mimetype?: string;
+  captured_at?: Date;
 }
 
 export class ProfileBlobsRepository {
@@ -18,14 +19,8 @@ export class ProfileBlobsRepository {
     return new Promise((resolve, reject) => {
       this.db.prepare(
         `
-        INSERT INTO profile_blobs (did, blob_type, blob_cid, sha256, phash, storage_path, mimetype)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (did, blob_type) DO UPDATE SET
-          blob_cid = EXCLUDED.blob_cid,
-          sha256 = EXCLUDED.sha256,
-          phash = EXCLUDED.phash,
-          storage_path = EXCLUDED.storage_path,
-          mimetype = EXCLUDED.mimetype
+        INSERT INTO profile_blobs (did, blob_type, blob_cid, sha256, phash, storage_path, mimetype, captured_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_TIMESTAMP))
       `,
         (err, stmt) => {
           if (err) {
@@ -42,6 +37,7 @@ export class ProfileBlobsRepository {
             blob.phash || null,
             blob.storage_path || null,
             blob.mimetype || null,
+            blob.captured_at || null,
             (err) => {
               if (err) {
                 logger.error({ err, blob }, "Failed to insert profile blob");
@@ -59,7 +55,7 @@ export class ProfileBlobsRepository {
   async findByDid(did: string): Promise<ProfileBlob[]> {
     return new Promise((resolve, reject) => {
       this.db.all(
-        `SELECT * FROM profile_blobs WHERE did = $1`,
+        `SELECT * FROM profile_blobs WHERE did = $1 ORDER BY captured_at DESC`,
         did,
         (err, rows: ProfileBlob[]) => {
           if (err) {
@@ -68,6 +64,24 @@ export class ProfileBlobsRepository {
             return;
           }
           resolve(rows || []);
+        }
+      );
+    });
+  }
+
+  async findLatestByDidAndType(did: string, blobType: "avatar" | "banner"): Promise<ProfileBlob | null> {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        `SELECT * FROM profile_blobs WHERE did = $1 AND blob_type = $2 ORDER BY captured_at DESC LIMIT 1`,
+        did,
+        blobType,
+        (err, rows: ProfileBlob[]) => {
+          if (err) {
+            logger.error({ err, did, blobType }, "Failed to find latest profile blob");
+            reject(err);
+            return;
+          }
+          resolve(rows?.[0] || null);
         }
       );
     });

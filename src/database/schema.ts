@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS profile_blobs (
   phash TEXT,
   storage_path TEXT,
   mimetype TEXT,
-  PRIMARY KEY (did, blob_type),
+  captured_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (did, blob_type, captured_at),
   FOREIGN KEY (did) REFERENCES profiles(did)
 );
 
