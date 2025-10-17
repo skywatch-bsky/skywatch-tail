@@ -48,7 +48,9 @@ describe("Database Integration Tests", () => {
           did TEXT PRIMARY KEY,
           handle TEXT,
           display_name TEXT,
-          description TEXT
+          description TEXT,
+          avatar_cid TEXT,
+          banner_cid TEXT
         );
 
         CREATE TABLE IF NOT EXISTS blobs (
@@ -146,6 +148,24 @@ describe("Database Integration Tests", () => {
       expect(found).not.toBeNull();
       expect(found?.did).toBe("did:plc:testuser");
     });
+
+    test("should insert and retrieve profile with avatar and banner", async () => {
+      const profile = {
+        did: "did:plc:testuser2",
+        handle: "testuser2.bsky.social",
+        display_name: "Test User 2",
+        description: "A test user with avatar",
+        avatar_cid: "bafyavatartest",
+        banner_cid: "bafybannertest",
+      };
+
+      await profilesRepo.insert(profile);
+      const found = await profilesRepo.findByDid(profile.did);
+
+      expect(found).not.toBeNull();
+      expect(found?.avatar_cid).toBe("bafyavatartest");
+      expect(found?.banner_cid).toBe("bafybannertest");
+    });
   });
 
   describe("BlobsRepository", () => {
@@ -174,6 +194,12 @@ describe("Database Integration Tests", () => {
     test("should find blobs by pHash", async () => {
       const found = await blobsRepo.findByPhash("deadbeef");
       expect(found.length).toBeGreaterThan(0);
+    });
+
+    test("should find blob by CID", async () => {
+      const found = await blobsRepo.findByCid("bafytest123");
+      expect(found).not.toBeNull();
+      expect(found?.sha256).toBe("abc123def456");
     });
   });
 });

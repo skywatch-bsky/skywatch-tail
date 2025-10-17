@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   did TEXT PRIMARY KEY,
   handle TEXT,
   display_name TEXT,
-  description TEXT
+  description TEXT,
+  avatar_cid TEXT,
+  banner_cid TEXT
 );
 
 -- Blobs table: stores information about image blobs found in posts
@@ -49,27 +51,96 @@ CREATE TABLE IF NOT EXISTS blobs (
   FOREIGN KEY (post_uri) REFERENCES posts(uri)
 );
 
+-- Profile blobs table: stores avatar and banner blobs for profiles
+CREATE TABLE IF NOT EXISTS profile_blobs (
+  did TEXT NOT NULL,
+  blob_type TEXT NOT NULL CHECK (blob_type IN ('avatar', 'banner')),
+  blob_cid TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  phash TEXT,
+  storage_path TEXT,
+  mimetype TEXT,
+  captured_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (did, blob_type, captured_at),
+  FOREIGN KEY (did) REFERENCES profiles(did)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_labels_uri ON labels(uri);
 CREATE INDEX IF NOT EXISTS idx_labels_val ON labels(val);
 CREATE INDEX IF NOT EXISTS idx_labels_cts ON labels(cts);
 CREATE INDEX IF NOT EXISTS idx_posts_did ON posts(did);
+CREATE INDEX IF NOT EXISTS idx_blobs_cid ON blobs(blob_cid);
 CREATE INDEX IF NOT EXISTS idx_blobs_sha256 ON blobs(sha256);
 CREATE INDEX IF NOT EXISTS idx_blobs_phash ON blobs(phash);
+CREATE INDEX IF NOT EXISTS idx_profile_blobs_sha256 ON profile_blobs(sha256);
+CREATE INDEX IF NOT EXISTS idx_profile_blobs_phash ON profile_blobs(phash);
 `;
+
+async function migrateProfilesTable(): Promise<void> {
+  const db = getDatabase();
+
+  return new Promise((resolve, reject) => {
+    db.all(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'profiles'",
+      (err, rows: any[]) => {
+        if (err) {
+          logger.error({ err }, "Failed to check profiles table columns");
+          reject(err);
+          return;
+        }
+
+        const columnNames = rows.map((row) => row.column_name);
+        const hasAvatarCid = columnNames.includes("avatar_cid");
+        const hasBannerCid = columnNames.includes("banner_cid");
+
+        if (!hasAvatarCid || !hasBannerCid) {
+          logger.info("Migrating profiles table to add avatar_cid and banner_cid columns");
+
+          const migrations: string[] = [];
+          if (!hasAvatarCid) {
+            migrations.push("ALTER TABLE profiles ADD COLUMN avatar_cid TEXT");
+          }
+          if (!hasBannerCid) {
+            migrations.push("ALTER TABLE profiles ADD COLUMN banner_cid TEXT");
+          }
+
+          db.exec(migrations.join("; "), (err) => {
+            if (err) {
+              logger.error({ err }, "Failed to migrate profiles table");
+              reject(err);
+              return;
+            }
+            logger.info("Profiles table migration completed");
+            resolve();
+          });
+        } else {
+          logger.debug("Profiles table already has avatar_cid and banner_cid columns");
+          resolve();
+        }
+      }
+    );
+  });
+}
 
 export async function initializeSchema(): Promise<void> {
   const db = getDatabase();
 
   return new Promise((resolve, reject) => {
-    db.exec(SCHEMA_SQL, (err) => {
+    db.exec(SCHEMA_SQL, async (err) => {
       if (err) {
         logger.error({ err }, "Failed to initialize schema");
         reject(err);
         return;
       }
       logger.info("Database schema initialized");
-      resolve();
+
+      try {
+        await migrateProfilesTable();
+        resolve();
+      } catch (migrationErr) {
+        reject(migrationErr);
+      }
     });
   });
 }

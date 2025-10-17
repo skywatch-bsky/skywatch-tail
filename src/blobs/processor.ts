@@ -100,71 +100,63 @@ export class BlobProcessor {
     }
   }
 
+  private parseBlobUri(uri: string): { did: string; type: 'post' | 'avatar' | 'banner' } {
+    if (uri.startsWith("profile://")) {
+      const match = uri.match(/^profile:\/\/([^/]+)\/(avatar|banner)$/);
+      if (match) {
+        return { did: match[1], type: match[2] as 'avatar' | 'banner' };
+      }
+    }
+
+    const [, did] = uri.replace("at://", "").split("/");
+    return { did, type: 'post' };
+  }
+
   private async processBlob(
     postUri: string,
     ref: BlobReference
   ): Promise<void> {
-    const existing = await this.blobsRepo.findBySha256(ref.cid);
+    const existing = await this.blobsRepo.findByCid(ref.cid);
     if (existing) {
+      await this.blobsRepo.insert({
+        post_uri: postUri,
+        blob_cid: ref.cid,
+        sha256: existing.sha256,
+        phash: existing.phash,
+        storage_path: existing.storage_path,
+        mimetype: existing.mimetype,
+      });
       logger.debug(
         { postUri, cid: ref.cid },
-        "Blob already processed, skipping"
+        "Blob already processed, reusing hashes"
       );
       return;
     }
 
-    const [, did] = postUri.replace("at://", "").split("/");
+    const { did, type } = this.parseBlobUri(postUri);
+    const pds = `https://${config.bsky.pds}`;
+    const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${ref.cid}`;
 
     try {
-      const response = await fetch(
-        `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${ref.cid}@jpeg`,
-        { method: "HEAD" }
-      );
+      const response = await fetch(blobUrl);
 
       if (!response.ok) {
         logger.warn(
-          { postUri, cid: ref.cid, status: response.status },
-          "Failed to fetch blob metadata"
+          { postUri, cid: ref.cid, status: response.status, did },
+          "Failed to fetch blob"
         );
         return;
       }
 
-      let blobData: Buffer | null = null;
+      const blobData = Buffer.from(await response.arrayBuffer());
+
       let storagePath: string | undefined;
-
       if (this.storage && config.blobs.hydrateBlobs) {
-        const fullResponse = await fetch(
-          `https://cdn.bsky.app/img/feed_fullsize/plain/${did}/${ref.cid}@jpeg`
+        storagePath = await this.storage.store(
+          ref.cid,
+          blobData,
+          ref.mimeType
         );
-
-        if (fullResponse.ok) {
-          blobData = Buffer.from(
-            await fullResponse.arrayBuffer()
-          );
-          storagePath = await this.storage.store(
-            ref.cid,
-            blobData,
-            ref.mimeType
-          );
-        }
-      } else {
-        const thumbResponse = await fetch(
-          `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${ref.cid}@jpeg`
-        );
-
-        if (thumbResponse.ok) {
-          blobData = Buffer.from(
-            await thumbResponse.arrayBuffer()
-          );
-        }
-      }
-
-      if (!blobData) {
-        logger.warn(
-          { postUri, cid: ref.cid },
-          "Could not fetch blob data"
-        );
-        return;
       }
 
       const hashes = await computeBlobHashes(
@@ -182,7 +174,7 @@ export class BlobProcessor {
       });
 
       logger.info(
-        { postUri, cid: ref.cid, sha256: hashes.sha256 },
+        { postUri, cid: ref.cid, sha256: hashes.sha256, type },
         "Blob processed successfully"
       );
     } catch (error) {
