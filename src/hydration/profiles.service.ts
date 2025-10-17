@@ -1,7 +1,8 @@
 import { AtpAgent } from "@atproto/api";
 import { Database } from "duckdb";
 import { ProfilesRepository } from "../database/profiles.repository.js";
-import { BlobProcessor } from "../blobs/processor.js";
+import { BlobsRepository } from "../database/blobs.repository.js";
+import { computeBlobHashes } from "../blobs/hasher.js";
 import { pRateLimit } from "p-ratelimit";
 import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
 import { logger } from "../logger/index.js";
@@ -10,13 +11,13 @@ import { config } from "../config/index.js";
 export class ProfileHydrationService {
   private agent: AtpAgent;
   private profilesRepo: ProfilesRepository;
-  private blobProcessor: BlobProcessor;
+  private blobsRepo: BlobsRepository;
   private limit: ReturnType<typeof pRateLimit>;
 
   constructor(db: Database) {
     this.agent = new AtpAgent({ service: `https://${config.bsky.pds}` });
     this.profilesRepo = new ProfilesRepository(db);
-    this.blobProcessor = new BlobProcessor(db, this.agent);
+    this.blobsRepo = new BlobsRepository(db);
     this.limit = pRateLimit({
       interval: 300000,
       rate: 3000,
@@ -136,39 +137,17 @@ export class ProfileHydrationService {
 
       if (avatarCid && avatarCid !== "") {
         try {
-          await this.blobProcessor.processBlobs(`profile://${did}/avatar`, [
-            {
-              images: [
-                {
-                  image: {
-                    ref: { $link: avatarCid },
-                    mimeType: "image/jpeg",
-                  },
-                },
-              ],
-            },
-          ]);
+          await this.processProfileBlob(did, avatarCid, "avatar");
         } catch (error) {
-          logger.warn({ error, did }, "Failed to process avatar blob");
+          logger.warn({ error, did, avatarCid }, "Failed to process avatar blob");
         }
       }
 
       if (bannerCid && bannerCid !== "") {
         try {
-          await this.blobProcessor.processBlobs(`profile://${did}/banner`, [
-            {
-              images: [
-                {
-                  image: {
-                    ref: { $link: bannerCid },
-                    mimeType: "image/jpeg",
-                  },
-                },
-              ],
-            },
-          ]);
+          await this.processProfileBlob(did, bannerCid, "banner");
         } catch (error) {
-          logger.warn({ error, did }, "Failed to process banner blob");
+          logger.warn({ error, did, bannerCid }, "Failed to process banner blob");
         }
       }
 
@@ -177,5 +156,42 @@ export class ProfileHydrationService {
       logger.error({ error, did }, "Failed to hydrate profile");
       throw error;
     }
+  }
+
+  private async processProfileBlob(
+    did: string,
+    cid: string,
+    type: "avatar" | "banner"
+  ): Promise<void> {
+    const postUri = `profile://${did}/${type}`;
+    const existing = await this.blobsRepo.findByPostUri(postUri);
+
+    if (existing.length > 0 && existing.some(b => b.blob_cid === cid)) {
+      logger.debug({ did, cid, type }, "Blob already processed, skipping");
+      return;
+    }
+
+    const blobResponse = await this.agent.com.atproto.sync.getBlob({
+      did,
+      cid,
+    });
+
+    if (!blobResponse.success) {
+      logger.warn({ did, cid, type }, "Failed to fetch blob from PDS");
+      return;
+    }
+
+    const blobData = Buffer.from(await blobResponse.data.arrayBuffer());
+    const hashes = await computeBlobHashes(blobData, "image/jpeg");
+
+    await this.blobsRepo.insert({
+      post_uri: postUri,
+      blob_cid: cid,
+      sha256: hashes.sha256,
+      phash: hashes.phash,
+      mimetype: "image/jpeg",
+    });
+
+    logger.info({ did, cid, type, sha256: hashes.sha256 }, "Profile blob processed successfully");
   }
 }
