@@ -157,6 +157,31 @@ export class ProfileHydrationService {
     }
   }
 
+  private async resolvePds(did: string): Promise<string | null> {
+    try {
+      const didDocResponse = await fetch(`https://plc.wtf/${did}`);
+      if (!didDocResponse.ok) {
+        logger.warn({ did, status: didDocResponse.status }, "Failed to fetch DID document");
+        return null;
+      }
+
+      const didDoc = await didDocResponse.json();
+      const pdsService = didDoc.service?.find((s: any) =>
+        s.id === "#atproto_pds" && s.type === "AtprotoPersonalDataServer"
+      );
+
+      if (!pdsService?.serviceEndpoint) {
+        logger.warn({ did }, "No PDS endpoint found in DID document");
+        return null;
+      }
+
+      return pdsService.serviceEndpoint;
+    } catch (error) {
+      logger.error({ error, did }, "Failed to resolve PDS from DID");
+      return null;
+    }
+  }
+
   private async processProfileBlob(
     did: string,
     cid: string,
@@ -170,17 +195,21 @@ export class ProfileHydrationService {
       return;
     }
 
-    const blobResponse = await this.agent.com.atproto.sync.getBlob({
-      did,
-      cid,
-    });
-
-    if (!blobResponse.success) {
-      logger.warn({ did, cid, type }, "Failed to fetch blob from PDS");
+    const pdsEndpoint = await this.resolvePds(did);
+    if (!pdsEndpoint) {
+      logger.warn({ did, cid, type }, "Cannot fetch blob without PDS endpoint");
       return;
     }
 
-    const blobData = Buffer.from(await blobResponse.data.arrayBuffer());
+    const blobUrl = `${pdsEndpoint}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${cid}`;
+    const blobResponse = await fetch(blobUrl);
+
+    if (!blobResponse.ok) {
+      logger.warn({ did, cid, type, pdsEndpoint, status: blobResponse.status }, "Failed to fetch blob from PDS");
+      return;
+    }
+
+    const blobData = Buffer.from(await blobResponse.arrayBuffer());
     const hashes = await computeBlobHashes(blobData, "image/jpeg");
 
     await this.blobsRepo.insert({
@@ -191,6 +220,6 @@ export class ProfileHydrationService {
       mimetype: "image/jpeg",
     });
 
-    logger.info({ did, cid, type, sha256: hashes.sha256 }, "Profile blob processed successfully");
+    logger.info({ did, cid, type, sha256: hashes.sha256, pdsEndpoint }, "Profile blob processed successfully");
   }
 }
