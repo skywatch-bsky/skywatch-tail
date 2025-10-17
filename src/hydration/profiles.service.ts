@@ -159,7 +159,7 @@ export class ProfileHydrationService {
 
   private async resolvePds(did: string): Promise<string | null> {
     try {
-      const didDocResponse = await fetch(`https://plc.wtf/${did}`);
+      const didDocResponse = await fetch(`${config.plc.endpoint}/${did}`);
       if (!didDocResponse.ok) {
         logger.warn({ did, status: didDocResponse.status }, "Failed to fetch DID document");
         return null;

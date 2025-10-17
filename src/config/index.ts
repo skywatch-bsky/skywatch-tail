@@ -9,6 +9,9 @@ const configSchema = z.object({
     password: z.string().min(1, "BSKY_PASSWORD is required"),
     pds: z.string().default("bsky.social"),
   }),
+  plc: z.object({
+    endpoint: z.string().url().default("https://plc.wtf"),
+  }),
   labeler: z.object({
     wssUrl: z.string().url("WSS_URL must be a valid URL"),
   }),
@@ -42,6 +45,9 @@ function loadConfig(): Config {
       handle: process.env.BSKY_HANDLE,
       password: process.env.BSKY_PASSWORD,
       pds: process.env.PDS,
+    },
+    plc: {
+      endpoint: process.env.PLC_ENDPOINT,
     },
     labeler: {
       wssUrl: process.env.WSS_URL,
