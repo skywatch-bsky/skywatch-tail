@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS profiles (
   did TEXT PRIMARY KEY,
   handle TEXT,
   display_name TEXT,
-  description TEXT
+  description TEXT,
+  avatar_cid TEXT,
+  banner_cid TEXT
 );
 
 -- Blobs table: stores information about image blobs found in posts
