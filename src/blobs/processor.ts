@@ -112,25 +112,6 @@ export class BlobProcessor {
     return { did, type: 'post' };
   }
 
-  private getBlobUrls(did: string, cid: string, type: 'post' | 'avatar' | 'banner'): { thumbnail: string; fullsize: string } {
-    if (type === 'avatar') {
-      return {
-        thumbnail: `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@jpeg`,
-        fullsize: `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@jpeg`,
-      };
-    } else if (type === 'banner') {
-      return {
-        thumbnail: `https://cdn.bsky.app/img/banner/plain/${did}/${cid}@jpeg`,
-        fullsize: `https://cdn.bsky.app/img/banner/plain/${did}/${cid}@jpeg`,
-      };
-    } else {
-      return {
-        thumbnail: `https://cdn.bsky.app/img/feed_thumbnail/plain/${did}/${cid}@jpeg`,
-        fullsize: `https://cdn.bsky.app/img/feed_fullsize/plain/${did}/${cid}@jpeg`,
-      };
-    }
-  }
-
   private async processBlob(
     postUri: string,
     ref: BlobReference
@@ -145,51 +126,29 @@ export class BlobProcessor {
     }
 
     const { did, type } = this.parseBlobUri(postUri);
-    const urls = this.getBlobUrls(did, ref.cid, type);
+    const pds = `https://${config.bsky.pds}`;
+    const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${ref.cid}`;
 
     try {
-      const response = await fetch(urls.thumbnail, { method: "HEAD" });
+      const response = await fetch(blobUrl);
 
       if (!response.ok) {
         logger.warn(
-          { postUri, cid: ref.cid, status: response.status },
-          "Failed to fetch blob metadata"
+          { postUri, cid: ref.cid, status: response.status, did },
+          "Failed to fetch blob"
         );
         return;
       }
 
-      let blobData: Buffer | null = null;
+      const blobData = Buffer.from(await response.arrayBuffer());
+
       let storagePath: string | undefined;
-
       if (this.storage && config.blobs.hydrateBlobs) {
-        const fullResponse = await fetch(urls.fullsize);
-
-        if (fullResponse.ok) {
-          blobData = Buffer.from(
-            await fullResponse.arrayBuffer()
-          );
-          storagePath = await this.storage.store(
-            ref.cid,
-            blobData,
-            ref.mimeType
-          );
-        }
-      } else {
-        const thumbResponse = await fetch(urls.thumbnail);
-
-        if (thumbResponse.ok) {
-          blobData = Buffer.from(
-            await thumbResponse.arrayBuffer()
-          );
-        }
-      }
-
-      if (!blobData) {
-        logger.warn(
-          { postUri, cid: ref.cid },
-          "Could not fetch blob data"
+        storagePath = await this.storage.store(
+          ref.cid,
+          blobData,
+          ref.mimeType
         );
-        return;
       }
 
       const hashes = await computeBlobHashes(
