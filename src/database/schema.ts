@@ -60,18 +60,70 @@ CREATE INDEX IF NOT EXISTS idx_blobs_sha256 ON blobs(sha256);
 CREATE INDEX IF NOT EXISTS idx_blobs_phash ON blobs(phash);
 `;
 
+async function migrateProfilesTable(): Promise<void> {
+  const db = getDatabase();
+
+  return new Promise((resolve, reject) => {
+    db.all(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'profiles'",
+      (err, rows: any[]) => {
+        if (err) {
+          logger.error({ err }, "Failed to check profiles table columns");
+          reject(err);
+          return;
+        }
+
+        const columnNames = rows.map((row) => row.column_name);
+        const hasAvatarCid = columnNames.includes("avatar_cid");
+        const hasBannerCid = columnNames.includes("banner_cid");
+
+        if (!hasAvatarCid || !hasBannerCid) {
+          logger.info("Migrating profiles table to add avatar_cid and banner_cid columns");
+
+          const migrations: string[] = [];
+          if (!hasAvatarCid) {
+            migrations.push("ALTER TABLE profiles ADD COLUMN avatar_cid TEXT");
+          }
+          if (!hasBannerCid) {
+            migrations.push("ALTER TABLE profiles ADD COLUMN banner_cid TEXT");
+          }
+
+          db.exec(migrations.join("; "), (err) => {
+            if (err) {
+              logger.error({ err }, "Failed to migrate profiles table");
+              reject(err);
+              return;
+            }
+            logger.info("Profiles table migration completed");
+            resolve();
+          });
+        } else {
+          logger.debug("Profiles table already has avatar_cid and banner_cid columns");
+          resolve();
+        }
+      }
+    );
+  });
+}
+
 export async function initializeSchema(): Promise<void> {
   const db = getDatabase();
 
   return new Promise((resolve, reject) => {
-    db.exec(SCHEMA_SQL, (err) => {
+    db.exec(SCHEMA_SQL, async (err) => {
       if (err) {
         logger.error({ err }, "Failed to initialize schema");
         reject(err);
         return;
       }
       logger.info("Database schema initialized");
-      resolve();
+
+      try {
+        await migrateProfilesTable();
+        resolve();
+      } catch (migrationErr) {
+        reject(migrationErr);
+      }
     });
   });
 }
