@@ -83,27 +83,17 @@ export class ProfileHydrationService {
 
       if (profileResponse.success && profileResponse.data.value) {
         const record = profileResponse.data.value as any;
-        logger.debug({ did, record }, "Profile record structure");
-
-        if (record.avatar) {
-          logger.debug({ did, avatarRef: record.avatar.ref, avatarRefKeys: Object.keys(record.avatar.ref || {}) }, "Avatar ref inspection");
-        }
-
         displayName = record.displayName;
         description = record.description;
 
-        if (record.avatar?.ref?.$link) {
-          avatarCid = record.avatar.ref.$link;
-        } else if (record.avatar?.ref) {
-          avatarCid = record.avatar.ref;
+        if (record.avatar?.ref) {
+          avatarCid = record.avatar.ref.toString();
         } else {
           avatarCid = "";
         }
 
-        if (record.banner?.ref?.$link) {
-          bannerCid = record.banner.ref.$link;
-        } else if (record.banner?.ref) {
-          bannerCid = record.banner.ref;
+        if (record.banner?.ref) {
+          bannerCid = record.banner.ref.toString();
         } else {
           bannerCid = "";
         }
