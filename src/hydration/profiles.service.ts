@@ -1,7 +1,7 @@
 import { AtpAgent } from "@atproto/api";
 import { Database } from "duckdb";
 import { ProfilesRepository } from "../database/profiles.repository.js";
-import { BlobsRepository } from "../database/blobs.repository.js";
+import { ProfileBlobsRepository } from "../database/profile-blobs.repository.js";
 import { computeBlobHashes } from "../blobs/hasher.js";
 import { pRateLimit } from "p-ratelimit";
 import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
@@ -11,13 +11,13 @@ import { config } from "../config/index.js";
 export class ProfileHydrationService {
   private agent: AtpAgent;
   private profilesRepo: ProfilesRepository;
-  private blobsRepo: BlobsRepository;
+  private profileBlobsRepo: ProfileBlobsRepository;
   private limit: ReturnType<typeof pRateLimit>;
 
   constructor(db: Database) {
     this.agent = new AtpAgent({ service: `https://${config.bsky.pds}` });
     this.profilesRepo = new ProfilesRepository(db);
-    this.blobsRepo = new BlobsRepository(db);
+    this.profileBlobsRepo = new ProfileBlobsRepository(db);
     this.limit = pRateLimit({
       interval: 300000,
       rate: 3000,
@@ -187,10 +187,10 @@ export class ProfileHydrationService {
     cid: string,
     type: "avatar" | "banner"
   ): Promise<void> {
-    const postUri = `profile://${did}/${type}`;
-    const existing = await this.blobsRepo.findByPostUri(postUri);
+    const existing = await this.profileBlobsRepo.findByDid(did);
+    const existingBlob = existing.find(b => b.blob_type === type && b.blob_cid === cid);
 
-    if (existing.length > 0 && existing.some(b => b.blob_cid === cid)) {
+    if (existingBlob) {
       logger.debug({ did, cid, type }, "Blob already processed, skipping");
       return;
     }
@@ -212,8 +212,9 @@ export class ProfileHydrationService {
     const blobData = Buffer.from(await blobResponse.arrayBuffer());
     const hashes = await computeBlobHashes(blobData, "image/jpeg");
 
-    await this.blobsRepo.insert({
-      post_uri: postUri,
+    await this.profileBlobsRepo.insert({
+      did,
+      blob_type: type,
       blob_cid: cid,
       sha256: hashes.sha256,
       phash: hashes.phash,
