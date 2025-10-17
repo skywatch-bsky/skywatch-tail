@@ -6,6 +6,8 @@ export interface Profile {
   handle?: string;
   display_name?: string;
   description?: string;
+  avatar_cid?: string;
+  banner_cid?: string;
 }
 
 export class ProfilesRepository {
@@ -15,12 +17,14 @@ export class ProfilesRepository {
     return new Promise((resolve, reject) => {
       this.db.prepare(
         `
-        INSERT INTO profiles (did, handle, display_name, description)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO profiles (did, handle, display_name, description, avatar_cid, banner_cid)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (did) DO UPDATE SET
           handle = EXCLUDED.handle,
           display_name = EXCLUDED.display_name,
-          description = EXCLUDED.description
+          description = EXCLUDED.description,
+          avatar_cid = EXCLUDED.avatar_cid,
+          banner_cid = EXCLUDED.banner_cid
       `,
         (err, stmt) => {
           if (err) {
@@ -34,6 +38,8 @@ export class ProfilesRepository {
             profile.handle || null,
             profile.display_name || null,
             profile.description || null,
+            profile.avatar_cid || null,
+            profile.banner_cid || null,
             (err) => {
               if (err) {
                 logger.error({ err, profile }, "Failed to insert profile");

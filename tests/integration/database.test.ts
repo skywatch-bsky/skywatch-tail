@@ -48,7 +48,9 @@ describe("Database Integration Tests", () => {
           did TEXT PRIMARY KEY,
           handle TEXT,
           display_name TEXT,
-          description TEXT
+          description TEXT,
+          avatar_cid TEXT,
+          banner_cid TEXT
         );
 
         CREATE TABLE IF NOT EXISTS blobs (
@@ -145,6 +147,24 @@ describe("Database Integration Tests", () => {
       const found = await profilesRepo.findByHandle("testuser.bsky.social");
       expect(found).not.toBeNull();
       expect(found?.did).toBe("did:plc:testuser");
+    });
+
+    test("should insert and retrieve profile with avatar and banner", async () => {
+      const profile = {
+        did: "did:plc:testuser2",
+        handle: "testuser2.bsky.social",
+        display_name: "Test User 2",
+        description: "A test user with avatar",
+        avatar_cid: "bafyavatartest",
+        banner_cid: "bafybannertest",
+      };
+
+      await profilesRepo.insert(profile);
+      const found = await profilesRepo.findByDid(profile.did);
+
+      expect(found).not.toBeNull();
+      expect(found?.avatar_cid).toBe("bafyavatartest");
+      expect(found?.banner_cid).toBe("bafybannertest");
     });
   });
 
