@@ -3,6 +3,9 @@ import { Database } from "duckdb";
 import { ProfilesRepository } from "../database/profiles.repository.js";
 import { ProfileBlobsRepository } from "../database/profile-blobs.repository.js";
 import { computeBlobHashes } from "../blobs/hasher.js";
+import { LocalBlobStorage } from "../blobs/storage/local.js";
+import { S3BlobStorage } from "../blobs/storage/s3.js";
+import { BlobStorage } from "../blobs/processor.js";
 import { pRateLimit } from "p-ratelimit";
 import { withRetry, isRateLimitError, isNetworkError, isServerError } from "../utils/retry.js";
 import { logger } from "../logger/index.js";
@@ -12,12 +15,27 @@ export class ProfileHydrationService {
   private agent: AtpAgent;
   private profilesRepo: ProfilesRepository;
   private profileBlobsRepo: ProfileBlobsRepository;
+  private storage: BlobStorage | null = null;
   private limit: ReturnType<typeof pRateLimit>;
 
   constructor(db: Database) {
     this.agent = new AtpAgent({ service: `https://${config.bsky.pds}` });
     this.profilesRepo = new ProfilesRepository(db);
     this.profileBlobsRepo = new ProfileBlobsRepository(db);
+
+    if (config.blobs.hydrateBlobs) {
+      if (config.blobs.storage.type === "s3") {
+        this.storage = new S3BlobStorage(
+          config.blobs.storage.s3Bucket!,
+          config.blobs.storage.s3Region!
+        );
+      } else {
+        this.storage = new LocalBlobStorage(
+          config.blobs.storage.localPath
+        );
+      }
+    }
+
     this.limit = pRateLimit({
       interval: 300000,
       rate: 3000,
@@ -209,6 +227,12 @@ export class ProfileHydrationService {
     }
 
     const blobData = Buffer.from(await blobResponse.arrayBuffer());
+
+    let storagePath: string | undefined;
+    if (this.storage && config.blobs.hydrateBlobs) {
+      storagePath = await this.storage.store(cid, blobData, "image/jpeg");
+    }
+
     const hashes = await computeBlobHashes(blobData, "image/jpeg");
 
     await this.profileBlobsRepo.insert({
@@ -217,9 +241,10 @@ export class ProfileHydrationService {
       blob_cid: cid,
       sha256: hashes.sha256,
       phash: hashes.phash,
+      storage_path: storagePath,
       mimetype: "image/jpeg",
     });
 
-    logger.info({ did, cid, type, sha256: hashes.sha256, pdsEndpoint }, "Profile blob processed successfully");
+    logger.info({ did, cid, type, sha256: hashes.sha256, pdsEndpoint, storagePath }, "Profile blob processed successfully");
   }
 }
