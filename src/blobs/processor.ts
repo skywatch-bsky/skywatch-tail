@@ -116,11 +116,19 @@ export class BlobProcessor {
     postUri: string,
     ref: BlobReference
   ): Promise<void> {
-    const existing = await this.blobsRepo.findBySha256(ref.cid);
+    const existing = await this.blobsRepo.findByCid(ref.cid);
     if (existing) {
+      await this.blobsRepo.insert({
+        post_uri: postUri,
+        blob_cid: ref.cid,
+        sha256: existing.sha256,
+        phash: existing.phash,
+        storage_path: existing.storage_path,
+        mimetype: existing.mimetype,
+      });
       logger.debug(
         { postUri, cid: ref.cid },
-        "Blob already processed, skipping"
+        "Blob already processed, reusing hashes"
       );
       return;
     }
