@@ -126,7 +126,9 @@ export class BlobProcessor {
       }
     }
 
-    const [, did] = uri.replace("at://", "").split("/");
+    // For at:// URIs, extract DID from first path component
+    // at://did:plc:xxx/app.bsky.feed.post/yyy -> did:plc:xxx
+    const [did] = uri.replace("at://", "").split("/");
     return { did, type: 'post' };
   }
 

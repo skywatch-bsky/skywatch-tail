@@ -2,13 +2,41 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { BlobProcessor } from "../../src/blobs/processor.js";
 
 describe("BlobProcessor", () => {
-  describe("extractBlobReferences", () => {
-    let processor: BlobProcessor;
+  let processor: BlobProcessor;
 
-    beforeEach(() => {
-      // Create a minimal processor instance for testing extractBlobReferences
-      processor = new BlobProcessor(null as any, null as any);
+  beforeEach(() => {
+    // Create a minimal processor instance for testing
+    processor = new BlobProcessor(null as any, null as any);
+  });
+
+  describe("parseBlobUri (via reflection)", () => {
+    test("should extract DID from at:// post URI", () => {
+      const uri = "at://did:plc:35rwgycymvgupzg4iqgn5ykn/app.bsky.feed.post/3m3gm4uhp3k2b";
+      // Access private method for testing
+      const result = (processor as any).parseBlobUri(uri);
+
+      expect(result.did).toBe("did:plc:35rwgycymvgupzg4iqgn5ykn");
+      expect(result.type).toBe("post");
     });
+
+    test("should extract DID from profile:// avatar URI", () => {
+      const uri = "profile://did:plc:test123/avatar";
+      const result = (processor as any).parseBlobUri(uri);
+
+      expect(result.did).toBe("did:plc:test123");
+      expect(result.type).toBe("avatar");
+    });
+
+    test("should extract DID from profile:// banner URI", () => {
+      const uri = "profile://did:plc:test456/banner";
+      const result = (processor as any).parseBlobUri(uri);
+
+      expect(result.did).toBe("did:plc:test456");
+      expect(result.type).toBe("banner");
+    });
+  });
+
+  describe("extractBlobReferences", () => {
 
     test("should extract CID from plain $link reference", () => {
       const embedsJson = [
