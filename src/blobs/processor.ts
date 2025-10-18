@@ -47,12 +47,26 @@ export class BlobProcessor {
       return refs;
     }
 
+    const extractCid = (ref: any): string | null => {
+      if (!ref) return null;
+      // Handle CID object (from @atproto/api deserialization)
+      if (typeof ref.toString === 'function' && ref.code !== undefined) {
+        return ref.toString();
+      }
+      // Handle plain $link string (from raw JSON)
+      if (ref.$link) {
+        return ref.$link;
+      }
+      return null;
+    };
+
     for (const embed of embedsJson) {
       if (embed.images && Array.isArray(embed.images)) {
         for (const img of embed.images) {
-          if (img.image?.ref?.$link) {
+          const cid = extractCid(img.image?.ref);
+          if (cid) {
             refs.push({
-              cid: img.image.ref.$link,
+              cid,
               mimeType: img.image.mimeType,
             });
           }
@@ -61,20 +75,24 @@ export class BlobProcessor {
 
       if (embed.media?.images && Array.isArray(embed.media.images)) {
         for (const img of embed.media.images) {
-          if (img.image?.ref?.$link) {
+          const cid = extractCid(img.image?.ref);
+          if (cid) {
             refs.push({
-              cid: img.image.ref.$link,
+              cid,
               mimeType: img.image.mimeType,
             });
           }
         }
       }
 
-      if (embed.video?.ref?.$link) {
-        refs.push({
-          cid: embed.video.ref.$link,
-          mimeType: embed.video.mimeType,
-        });
+      if (embed.video?.ref) {
+        const cid = extractCid(embed.video.ref);
+        if (cid) {
+          refs.push({
+            cid,
+            mimeType: embed.video.mimeType,
+          });
+        }
       }
     }
 
@@ -112,6 +130,31 @@ export class BlobProcessor {
     return { did, type: 'post' };
   }
 
+  private async resolvePds(did: string): Promise<string | null> {
+    try {
+      const didDocResponse = await fetch(`${config.plc.endpoint}/${did}`);
+      if (!didDocResponse.ok) {
+        logger.warn({ did, status: didDocResponse.status }, "Failed to fetch DID document");
+        return null;
+      }
+
+      const didDoc = await didDocResponse.json();
+      const pdsService = didDoc.service?.find((s: any) =>
+        s.id === "#atproto_pds" && s.type === "AtprotoPersonalDataServer"
+      );
+
+      if (!pdsService?.serviceEndpoint) {
+        logger.warn({ did }, "No PDS endpoint found in DID document");
+        return null;
+      }
+
+      return pdsService.serviceEndpoint;
+    } catch (error) {
+      logger.error({ error, did }, "Failed to resolve PDS from DID");
+      return null;
+    }
+  }
+
   private async processBlob(
     postUri: string,
     ref: BlobReference
@@ -134,15 +177,21 @@ export class BlobProcessor {
     }
 
     const { did, type } = this.parseBlobUri(postUri);
-    const pds = `https://${config.bsky.pds}`;
-    const blobUrl = `${pds}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${ref.cid}`;
+
+    const pdsEndpoint = await this.resolvePds(did);
+    if (!pdsEndpoint) {
+      logger.warn({ postUri, cid: ref.cid, did }, "Cannot fetch blob without PDS endpoint");
+      return;
+    }
+
+    const blobUrl = `${pdsEndpoint}/xrpc/com.atproto.sync.getBlob?did=${did}&cid=${ref.cid}`;
 
     try {
       const response = await fetch(blobUrl);
 
       if (!response.ok) {
         logger.warn(
-          { postUri, cid: ref.cid, status: response.status, did },
+          { postUri, cid: ref.cid, status: response.status, did, pdsEndpoint },
           "Failed to fetch blob"
         );
         return;
@@ -174,7 +223,7 @@ export class BlobProcessor {
       });
 
       logger.info(
-        { postUri, cid: ref.cid, sha256: hashes.sha256, type },
+        { postUri, cid: ref.cid, sha256: hashes.sha256, type, pdsEndpoint, storagePath },
         "Blob processed successfully"
       );
     } catch (error) {
