@@ -1,8 +1,8 @@
-# Profile Blob Hydration - Implementation Notes
+# Blob Hydration - Implementation Notes
 
 ## Overview
 
-This document captures key learnings from implementing avatar and banner blob hydration for Bluesky profiles.
+This document captures key learnings from implementing blob hydration for Bluesky profiles and posts, including avatars, banners, and post images/videos.
 
 ## Key Discoveries
 
@@ -32,6 +32,22 @@ record.avatar.ref // CID object with { code, version, hash, ... }
 **Solution:**
 ```typescript
 const cid = record.avatar.ref.toString(); // "bafkrei..."
+```
+
+**For post embeds**, you need to handle both formats:
+```typescript
+const extractCid = (ref: any): string | null => {
+  if (!ref) return null;
+  // Handle CID object (from @atproto/api deserialization)
+  if (typeof ref.toString === 'function' && ref.code !== undefined) {
+    return ref.toString();
+  }
+  // Handle plain $link string (from raw JSON)
+  if (ref.$link) {
+    return ref.$link;
+  }
+  return null;
+};
 ```
 
 ### 2. PDS Endpoint Resolution
@@ -158,7 +174,15 @@ if (existingProfile && !needsRehydration) {
 
 ## Related Files
 
-- `src/hydration/profiles.service.ts` - Main hydration logic
+### Profile Blobs
+- `src/hydration/profiles.service.ts` - Profile avatar/banner hydration
 - `src/database/profile-blobs.repository.ts` - Profile blob persistence
-- `src/database/schema.ts` - Table definitions
+
+### Post Blobs
+- `src/blobs/processor.ts` - Post image/video blob processing
+- `src/database/blobs.repository.ts` - Post blob persistence
+- `tests/unit/blob-processor.test.ts` - Unit tests for blob extraction
+
+### Common
+- `src/database/schema.ts` - Table definitions for both blob types
 - `src/config/index.ts` - PLC endpoint configuration
