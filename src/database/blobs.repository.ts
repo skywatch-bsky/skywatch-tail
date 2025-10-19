@@ -57,14 +57,14 @@ export class BlobsRepository {
     return new Promise((resolve, reject) => {
       this.db.all(
         `SELECT * FROM blobs WHERE post_uri = $1`,
-        postUri,
-        (err, rows: Blob[]) => {
+        [postUri],
+        (err, rows: any) => {
           if (err) {
             logger.error({ err, postUri }, "Failed to find blobs by post URI");
             reject(err);
             return;
           }
-          resolve(rows || []);
+          resolve((rows || []) as Blob[]);
         }
       );
     });
@@ -74,14 +74,14 @@ export class BlobsRepository {
     return new Promise((resolve, reject) => {
       this.db.all(
         `SELECT * FROM blobs WHERE sha256 = $1 LIMIT 1`,
-        sha256,
-        (err, rows: Blob[]) => {
+        [sha256],
+        (err, rows: any) => {
           if (err) {
             logger.error({ err, sha256 }, "Failed to find blob by SHA256");
             reject(err);
             return;
           }
-          resolve(rows?.[0] || null);
+          resolve((rows as Blob[])?.[0] || null);
         }
       );
     });
@@ -91,14 +91,14 @@ export class BlobsRepository {
     return new Promise((resolve, reject) => {
       this.db.all(
         `SELECT * FROM blobs WHERE phash = $1`,
-        phash,
-        (err, rows: Blob[]) => {
+        [phash],
+        (err, rows: any) => {
           if (err) {
             logger.error({ err, phash }, "Failed to find blobs by pHash");
             reject(err);
             return;
           }
-          resolve(rows || []);
+          resolve((rows || []) as Blob[]);
         }
       );
     });
@@ -108,14 +108,14 @@ export class BlobsRepository {
     return new Promise((resolve, reject) => {
       this.db.all(
         `SELECT * FROM blobs WHERE blob_cid = $1 LIMIT 1`,
-        cid,
-        (err, rows: Blob[]) => {
+        [cid],
+        (err, rows: any) => {
           if (err) {
             logger.error({ err, cid }, "Failed to find blob by CID");
             reject(err);
             return;
           }
-          resolve(rows?.[0] || null);
+          resolve((rows as Blob[])?.[0] || null);
         }
       );
     });
